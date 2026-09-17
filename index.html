@@ -41,7 +41,13 @@ const pad=n=>String(n).padStart(2,'0'), dk=d=>`${d.getFullYear()}-${pad(d.getMon
 function toast(s){el('toast').textContent=s;el('toast').style.display='block';setTimeout(()=>el('toast').style.display='none',1400)}
 async function load(){
  let [u,l]=await Promise.all([client.from('people').select('*').order('created_at'),client.from('shit_logs').select('*').order('created_at',{ascending:false}).limit(1000)]);
- if(u.error||l.error){el('status').textContent='Database error';el('status').className='bad';console.error(u.error||l.error);return}
+ if(u.error||l.error){
+  const err = u.error || l.error;
+  el('status').textContent = err.message || 'Database error';
+  el('status').className = 'bad';
+  console.error(err);
+  return;
+ }
  users=u.data;logs=l.data; if(!selected&&users[0])selected=users[0].id; if(selected&&!users.some(x=>x.id===selected)&&users[0])selected=users[0].id;
  el('status').textContent='Online';el('status').className='ok';render();
 }
