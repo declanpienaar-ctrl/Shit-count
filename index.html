@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#151515"><title>The Shit Counter</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f3f3ef;color:#171717}
+.app{max-width:650px;margin:auto;padding:22px 15px 55px}h1{margin:0;font-size:28px}.sub{margin:5px 0 18px;color:#6d6d68}
+.card{background:#fff;border:1px solid #e3e3dc;border-radius:19px;padding:17px;margin:12px 0;box-shadow:0 3px 14px #00000008}
+.top,.between,.actions{display:flex;align-items:center;justify-content:space-between;gap:9px}select,input,button{font:inherit}
+select,input{width:100%;padding:12px;border:1px solid #d9d9d2;border-radius:12px;background:#fff}.btn{border:0;border-radius:12px;padding:12px 14px;font-weight:800;cursor:pointer}
+.secondary{background:#ecece7}.log{width:100%;border:0;border-radius:18px;background:#171717;color:#fff;padding:23px 12px;font-size:22px;font-weight:950;margin:11px 0;cursor:pointer}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{text-align:center;background:#f3f3ef;border-radius:14px;padding:13px 5px}.n{font-size:26px;font-weight:900}.l,.muted{font-size:12px;color:#777}
+h2{font-size:17px;margin:0 0 11px}.row{display:flex;justify-content:space-between;align-items:center;padding:10px 2px;border-bottom:1px solid #eee}.row:last-child{border:0}.danger{border:0;background:none;color:#a22;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 5px;border-bottom:1px solid #eee;text-align:left}th:not(:first-child),td:not(:first-child){text-align:right}
+#status{font-size:12px;font-weight:700}.ok{color:#287d43}.bad{color:#a22}.modal{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px}.modal.show{display:flex}.box{width:min(420px,100%);background:#fff;border-radius:18px;padding:19px}.box input{margin:8px 0}.actions button{flex:1}.toast{position:fixed;left:50%;bottom:25px;transform:translateX(-50%);background:#171717;color:white;border-radius:99px;padding:11px 17px;display:none}
+</style>
+</head>
+<body>
+<div class="app">
+ <div class="top"><div><h1>The Shit Counter</h1><div class="sub">Shared toilet analytics.</div></div><span id="status">Connecting…</span></div>
+ <div class="card">
+   <div class="between"><select id="user" onchange="chooseUser()"></select><button class="btn secondary" onclick="openFriend()">+ Friend</button></div>
+   <button class="log" onclick="logShit()">+ LOG A SHIT</button>
+   <div class="stats"><div class="stat"><div class="n" id="today">0</div><div class="l">Today</div></div><div class="stat"><div class="n" id="month">0</div><div class="l">This month</div></div><div class="stat"><div class="n" id="all">0</div><div class="l">All time</div></div></div>
+   <div class="muted" id="last" style="text-align:center;margin-top:12px">—</div>
+ </div>
+ <div class="card"><h2>This month's leaderboard</h2><div id="leader"></div></div>
+ <div class="card"><h2>Monthly comparison</h2><div style="overflow:auto"><table id="compare"></table></div></div>
+ <div class="card"><h2>Recent history</h2><div id="history"></div></div>
+</div>
+<div class="modal" id="modal"><div class="box"><h2>Add a friend</h2><input id="friend" maxlength="30" placeholder="Name"><div class="actions"><button class="btn secondary" onclick="closeFriend()">Cancel</button><button class="btn" style="background:#171717;color:#fff" onclick="addFriend()">Add</button></div></div></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const client = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+let users=[], logs=[], selected=localStorage.getItem('shit-selected')||'';
+const el=id=>document.getElementById(id), esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const pad=n=>String(n).padStart(2,'0'), dk=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`, mk=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+function toast(s){el('toast').textContent=s;el('toast').style.display='block';setTimeout(()=>el('toast').style.display='none',1400)}
+async function load(){
+ let [u,l]=await Promise.all([client.from('people').select('*').order('created_at'),client.from('shit_logs').select('*').order('created_at',{ascending:false}).limit(1000)]);
+ if(u.error||l.error){el('status').textContent='Database error';el('status').className='bad';console.error(u.error||l.error);return}
+ users=u.data;logs=l.data; if(!selected&&users[0])selected=users[0].id; if(selected&&!users.some(x=>x.id===selected)&&users[0])selected=users[0].id;
+ el('status').textContent='Online';el('status').className='ok';render();
+}
+function render(){
+ el('user').innerHTML=users.map(u=>`<option value="${u.id}" ${u.id===selected?'selected':''}>${esc(u.name)}</option>`).join('');
+ const now=new Date(), mine=logs.filter(x=>x.person_id===selected);
+ el('today').textContent=mine.filter(x=>dk(new Date(x.created_at))===dk(now)).length;
+ el('month').textContent=mine.filter(x=>mk(new Date(x.created_at))===mk(now)).length; el('all').textContent=mine.length;
+ el('last').textContent=mine[0]?'Last logged: '+new Date(mine[0].created_at).toLocaleString():'No logs yet';
+ const scores=users.map(u=>({name:u.name,count:logs.filter(x=>x.person_id===u.id&&mk(new Date(x.created_at))===mk(now)).length})).sort((a,b)=>b.count-a.count);
+ el('leader').innerHTML=scores.length?scores.map((x,i)=>`<div class="row"><span><b>#${i+1}</b> ${esc(x.name)}</span><b>${x.count}</b></div>`).join(''):'<div class="muted">Add your first friend.</div>';
+ const months=[...new Set(logs.map(x=>mk(new Date(x.created_at))))].sort().reverse().slice(0,6);
+ el('compare').innerHTML='<tr><th>Person</th>'+months.map(m=>`<th>${m}</th>`).join('')+'</tr>'+users.map(u=>'<tr><td>'+esc(u.name)+'</td>'+months.map(m=>`<td>${logs.filter(x=>x.person_id===u.id&&mk(new Date(x.created_at))===m).length}</td>`).join('')+'</tr>').join('');
+ el('history').innerHTML=logs.slice(0,30).map(x=>{let u=users.find(y=>y.id===x.person_id);return `<div class="row"><span><b>${esc(u?.name||'Unknown')}</b><br><span class="muted">${new Date(x.created_at).toLocaleString()}</span></span><button class="danger" onclick="removeLog('${x.id}')">Delete</button></div>`}).join('')||'<div class="muted">Nothing logged yet.</div>';
+}
+function chooseUser(){selected=el('user').value;localStorage.setItem('shit-selected',selected);render()}
+async function logShit(){if(!selected)return toast('Add a friend first');let r=await client.from('shit_logs').insert({person_id:selected});if(r.error)return toast('Could not log');toast('Shit logged.');await load()}
+async function removeLog(id){let r=await client.from('shit_logs').delete().eq('id',id);if(r.error)return toast('Could not delete');await load()}
+function openFriend(){el('modal').classList.add('show');el('friend').focus()} function closeFriend(){el('modal').classList.remove('show')}
+async function addFriend(){let name=el('friend').value.trim();if(!name)return;let r=await client.from('people').insert({name}).select().single();if(r.error)return toast(r.error.code==='23505'?'Name already exists':'Could not add');selected=r.data.id;localStorage.setItem('shit-selected',selected);el('friend').value='';closeFriend();await load()}
+load(); setInterval(load,15000);
+</script>
+</body></html>
